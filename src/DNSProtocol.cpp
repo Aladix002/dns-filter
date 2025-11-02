@@ -88,14 +88,14 @@ DNSResponseCode DNSProtocol::processQuery(const char* buffer, int /*len*/, const
         return DNSResponseCode::NOERROR;
     }
     
+    // Parsuje otazky
+    char* question = (char*)header + sizeof(dns_header);
+    uint16_t qdcount = ntohs(header->qdcount);
+    
     // Aktualizuje statistiky - celkovy pocet dotazov
     if (stats) {
         stats->totalQueries++;
     }
-    
-    // Parsuje otazky
-    char* question = (char*)header + sizeof(dns_header);
-    uint16_t qdcount = ntohs(header->qdcount);
     
     for (uint16_t i = 0; i < qdcount; i++) {
         std::string domain;

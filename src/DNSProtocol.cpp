@@ -35,7 +35,7 @@ char* DNSProtocol::parseDomain(char* questionStart, std::string& domain) {
 // Odosiela chybovu odpoved klientovi
 // Info pre implementaciu: https://datatracker.ietf.org/doc/html/rfc1035
 void DNSProtocol::sendErrorResponse(int clientSocket, const char* buffer, int len, 
-                                   const struct sockaddr_storage& clientAddr, DNSResponseCode code, bool verbose) {
+                                   const struct sockaddr_storage& clientAddr, DNSResponseCode code) {
     char errorBuffer[MAX_DNS_SIZE];
     memcpy(errorBuffer, buffer, len);
     
@@ -55,10 +55,6 @@ void DNSProtocol::sendErrorResponse(int clientSocket, const char* buffer, int le
     if (sendto(clientSocket, errorBuffer, len, 0, 
                (const struct sockaddr*)&clientAddr, addrLen) < 0) {
         std::cerr << "Failed to send error response to client" << std::endl;
-    } else {
-        if (verbose) {
-            std::cout << "Error response sent (code: " << static_cast<int>(code) << ")" << std::endl;
-        }
     }
 }
 
@@ -87,18 +83,8 @@ DNSResponseCode DNSProtocol::processQuery(const char* buffer, int /*len*/, const
                                          const std::vector<std::string>& blockedDomains, bool verbose, Statistics* stats) {
     dns_header* header = (dns_header*)buffer;
     
-    if (verbose) {
-        std::cout << "\n=== NOVY DNS DOTAZ ===" << std::endl;
-        std::cout << "ID: " << ntohs(header->id) << std::endl;
-        std::cout << "QR: " << ntohs(header->qr) << " (0=dotaz, 1=odpoved)" << std::endl;
-        std::cout << "QDCOUNT: " << ntohs(header->qdcount) << std::endl;
-    }
-    
     // Kontroluje ci je to dotaz
     if (!isQuery(header)) {
-        if (verbose) {
-            std::cout << "Ignorujem - toto je odpoved, nie dotaz" << std::endl;
-        }
         return DNSResponseCode::NOERROR;
     }
     
@@ -116,10 +102,6 @@ DNSResponseCode DNSProtocol::processQuery(const char* buffer, int /*len*/, const
         dns_question* qtype = (dns_question*)parseDomain(question, domain);
         uint16_t qtype_val = ntohs(qtype->type);
         
-        if (verbose) {
-            std::cout << "Dotaz #" << (i+1) << ": " << domain << " (typ: " << qtype_val << ")" << std::endl;
-        }
-        
         // Kontroluje ci je domena blokovana
         std::string normalized = domain;
         std::transform(normalized.begin(), normalized.end(), normalized.begin(), ::tolower);
@@ -133,7 +115,7 @@ DNSResponseCode DNSProtocol::processQuery(const char* buffer, int /*len*/, const
         // Kontroluje typ dotazu - povolene len A zaznamy
         if (qtype_val != 1) {  // A record type = 1
             if (verbose) {
-                std::cout << "NESPRAVNY TYP: " << domain << " (typ " << qtype_val << ", povoleny len A=1)" << std::endl;
+                std::cout << "query: " << domain << ", action: notimp" << std::endl;
             }
             // Aktualizuje statistiky pre nepodporovane typy
             if (stats) {
@@ -146,8 +128,7 @@ DNSResponseCode DNSProtocol::processQuery(const char* buffer, int /*len*/, const
         for (const auto& blocked : blockedDomains) {
             if (normalized == blocked) {
                 if (verbose) {
-                    std::cout << "PRESNA ZHODA: " << normalized << " == " << blocked << std::endl;
-                    std::cout << "BLOKOVANE: " << domain << std::endl;
+                    std::cout << "query: " << domain << ", action: blocked" << std::endl;
                 }
                 // Aktualizuje statistiky pre blokovane dotazy
                 if (stats) {
@@ -163,8 +144,7 @@ DNSResponseCode DNSProtocol::processQuery(const char* buffer, int /*len*/, const
             if (normalized.length() > blocked.length() && 
                 normalized.substr(normalized.length() - blocked.length() - 1) == "." + blocked) {
                 if (verbose) {
-                    std::cout << "PODDOMENA: " << normalized << " je poddomenou " << blocked << std::endl;
-                    std::cout << "BLOKOVANE: " << domain << std::endl;
+                    std::cout << "query: " << domain << ", action: blocked" << std::endl;
                 }
                 // Aktualizacia statistik pre blokovane poddomeny
                 if (stats) {
@@ -176,7 +156,7 @@ DNSResponseCode DNSProtocol::processQuery(const char* buffer, int /*len*/, const
         }
         
         if (verbose) {
-            std::cout << "POVOLENE: " << domain << std::endl;
+            std::cout << "query: " << domain << ", action: forwarded" << std::endl;
         }
         
         // Presun na dalsiu otazku

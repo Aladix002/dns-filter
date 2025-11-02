@@ -77,7 +77,7 @@ public:
     
     // Odoslanie chybovej odpovede klientovi
     static void sendErrorResponse(int clientSocket, const char* buffer, int len, 
-                                 const struct sockaddr_storage& clientAddr, DNSResponseCode code, bool verbose = false);
+                                 const struct sockaddr_storage& clientAddr, DNSResponseCode code);
     
     // Ziskanie adresy klienta ako retazec
     static std::string getClientAddressString(const struct sockaddr_storage& clientAddr);

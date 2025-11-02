@@ -107,9 +107,6 @@ bool DNSResolver::loadFilterFile(const std::string& filename) {
     }
     
     file.close();
-    if (verbose_) {
-        std::cout << "Nacitanych " << blockedDomains_.size() << " blokovanych domen" << std::endl;
-    }
     return true;
 }
 
@@ -145,9 +142,6 @@ int DNSResolver::createClientSocket(int port, int family) {
         addr6.sin6_port = htons(port);
         
         if (bind(sockfd, (struct sockaddr*)&addr6, sizeof(addr6)) == 0) {
-            if (verbose_) {
-                std::cout << "IPv6 client socket pripojeny na port " << port << std::endl;
-            }
             return sockfd;
         } else {
             close(sockfd);
@@ -162,9 +156,6 @@ int DNSResolver::createClientSocket(int port, int family) {
         addr4.sin_port = htons(port);
         
         if (bind(sockfd, (struct sockaddr*)&addr4, sizeof(addr4)) == 0) {
-            if (verbose_) {
-                std::cout << "IPv4 client socket pripojeny na port " << port << std::endl;
-            }
             return sockfd;
         } else {
             close(sockfd);
@@ -194,9 +185,6 @@ int DNSResolver::createResolverSocket(const std::string& resolver, int port) {
         if (sockfd < 0) continue;
         
         if (connect(sockfd, rp->ai_addr, rp->ai_addrlen) == 0) {
-            if (verbose_) {
-                std::cout << "Pripojeny k DNS resolveru: " << resolver << ":" << port << std::endl;
-            }
             break;
         }
         
@@ -253,32 +241,23 @@ void DNSResolver::handleQuery(const char* buffer, int len, const struct sockaddr
     DNSResponseCode responseCode = DNSProtocol::processQuery(buffer, len, clientAddr, blockedDomains_, verbose_, statsEnabled_ ? &stats_ : nullptr);
     
     if (responseCode != DNSResponseCode::NOERROR) {
-        if (verbose_) {
-            std::cout << "Odosielam " << (responseCode == DNSResponseCode::REFUSED ? "REFUSED" : "NOTIMP") << " odpoved" << std::endl;
-        }
-        DNSProtocol::sendErrorResponse(clientSocket, buffer, len, clientAddr, responseCode, verbose_);
+        DNSProtocol::sendErrorResponse(clientSocket, buffer, len, clientAddr, responseCode);
         return;
     }
     
     // Kontrola ci je resolver dostupny
     if (resolverSocket_ < 0) {
-        if (verbose_) {
-            std::cout << "Resolver nie je dostupny, odosielam SERVFAIL" << std::endl;
-        }
-        DNSProtocol::sendErrorResponse(clientSocket, buffer, len, clientAddr, DNSResponseCode::SERVFAIL, verbose_);
+        DNSProtocol::sendErrorResponse(clientSocket, buffer, len, clientAddr, DNSResponseCode::SERVFAIL);
         return;
     }
     
     // Presmerovava dotaz na resolver
-    if (verbose_) {
-        std::cout << "Preposielam dotaz na resolver " << resolverAddress_ << std::endl;
-    }
     if (send(resolverSocket_, buffer, len, 0) < 0) {
         std::cerr << "Chyba pri odosielani dotazu na resolver" << std::endl;
         return;
     }
     
-    // Aktualizuje statistiky pre preposlane dotazy
+    // Aktualizuje statistiky pre preposlane dotazy (len ak sa dotaz úspešne odoslal)
     if (statsEnabled_) {
         stats_.forwardedQueries++;
     }
@@ -291,9 +270,6 @@ void DNSResolver::handleQuery(const char* buffer, int len, const struct sockaddr
         return;
     }
     
-    if (verbose_) {
-        std::cout << "Prijata odpoved od resolvera (" << received << " bytov)" << std::endl;
-    }
     
     // Odoslanie odpovede klientovi
     socklen_t addrLen;
@@ -308,11 +284,6 @@ void DNSResolver::handleQuery(const char* buffer, int len, const struct sockaddr
     if (sendto(clientSocket, responseBuffer, received, 0,
                (const struct sockaddr*)&clientAddr, addrLen) < 0) {
         std::cerr << "Chyba pri odosielani odpovede klientovi" << std::endl;
-    } else {
-        if (verbose_) {
-            std::cout << "Odpoved odoslana klientovi" << std::endl;
-            std::cout << "=== KONIEC DOTAZU ===\n" << std::endl;
-        }
     }
 }
 
@@ -322,32 +293,19 @@ void DNSResolver::printStatistics() const {
         return;
     }
     
-    std::cout << "\n=== STATISTIKY ===" << std::endl;
-    std::cout << "Celkovy pocet dotazov: " << stats_.totalQueries << std::endl;
-    std::cout << "Blokovane dotazy: " << stats_.blockedQueries << std::endl;
-    std::cout << "Preposlane dotazy: " << stats_.forwardedQueries << std::endl;
-    std::cout << "Ostatne typy dotazov (NOTIMP): " << stats_.otherTypeQueries << std::endl;
-    std::cout << "Presne zhody s blokovanymi domenami: " << stats_.exactMatches << std::endl;
-    std::cout << "Zhody s poddomenami: " << stats_.subdomainMatches << std::endl;
-    
-    if (stats_.totalQueries > 0) {
-        double blockedPercent = (double)stats_.blockedQueries / stats_.totalQueries * 100.0;
-        double forwardedPercent = (double)stats_.forwardedQueries / stats_.totalQueries * 100.0;
-        double otherTypePercent = (double)stats_.otherTypeQueries / stats_.totalQueries * 100.0;
-        
-        std::cout << "\nPercenta:" << std::endl;
-        std::cout << "Blokovane: " << std::fixed << std::setprecision(1) << blockedPercent << "%" << std::endl;
-        std::cout << "Preposlane: " << std::fixed << std::setprecision(1) << forwardedPercent << "%" << std::endl;
-        std::cout << "Ostatne typy (NOTIMP): " << std::fixed << std::setprecision(1) << otherTypePercent << "%" << std::endl;
-    }
-    std::cout << "==================\n" << std::endl;
+    std::cout << "total queries: " << stats_.totalQueries << std::endl;
+    std::cout << "blocked: " << stats_.blockedQueries << std::endl;
+    std::cout << "forwarded: " << stats_.forwardedQueries << std::endl;
+    std::cout << "notimp: " << stats_.otherTypeQueries << std::endl;
+    std::cout << "blocked - exact matches: " << stats_.exactMatches << std::endl;
+    std::cout << "blocked - subdomain matches: " << stats_.subdomainMatches << std::endl;
 }
 
 // Signal handler pre SIGINT (Ctrl+C)
 void DNSResolver::signalHandler(int signal) {
     if (signal == SIGINT && instance_ != nullptr) {
-        std::cout << "\n\nPrijaty SIGINT signal. Ukoncujem program..." << std::endl;
         if (instance_->statsEnabled_) {
+            std::cout << std::endl;
             instance_->printStatistics();
         }
         exit(0);
@@ -365,8 +323,8 @@ void DNSResolver::run() {
     signal(SIGINT, signalHandler);
     
     if (verbose_) {
-        std::cout << "DNS Filter spusteny na porte " << port_ << std::endl;
-        std::cout << "Pouzivam resolver: " << resolverAddress_ << std::endl;
+        std::cout << "dns filter started on port: " << port_ << std::endl;
+        std::cout << "resolver: " << resolverAddress_ << std::endl;
     }
     
     char buffer[MAX_DNS_SIZE];
@@ -406,10 +364,6 @@ void DNSResolver::run() {
                             (struct sockaddr*)&clientAddr, &addrLen);
             
             if (n > 0) {
-                if (verbose_) {
-                    std::string clientAddrStr = DNSProtocol::getClientAddressString(clientAddr);
-                    std::cout << "Received query from " << clientAddrStr << std::endl;
-                }
                 handleQuery(buffer, n, clientAddr, clientSocket4_);
             }
         }
@@ -421,10 +375,6 @@ void DNSResolver::run() {
                             (struct sockaddr*)&clientAddr, &addrLen);
             
             if (n > 0) {
-                if (verbose_) {
-                    std::string clientAddrStr = DNSProtocol::getClientAddressString(clientAddr);
-                    std::cout << "Received query from " << clientAddrStr << std::endl;
-                }
                 handleQuery(buffer, n, clientAddr, clientSocket6_);
             }
         }

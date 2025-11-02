@@ -23,7 +23,7 @@ Program implementuje filtrujúci DNS resolver v C++17, ktorý blokuje dotazy typ
 
 ### Voliteľné argumenty:
 - **`-p port`** - Číslo portu, na ktorom bude program očakávať dotazy (východzia hodnota: 53)
-- **`-v`** - Verbose mód - vypisuje informácie o preklade
+- **`-v`** - Verbose mód - vypisuje jednoduché informácie o dotazoch
 - **`--stats`** - Na konci behu vypíše štatistiky
 - **`-h`** alebo **`--help`** - Zobrazí nápovedu
 
@@ -62,34 +62,39 @@ make
 - **NOTIMP (4)** - nepodporovaný typ dotazu (iba A records)
 - **NOERROR (0)** - dotaz je prepustený
 
+## Verbose mód
+
+Pri použití argumentu `-v` program vypisuje jednoduché informácie o každom dotaze v angličtine:
+
+- `query: domain.com, action: forwarded` - dotaz bol preposlaný resolveru
+- `query: domain.com, action: blocked` - dotaz bol zablokovaný
+- `query: domain.com, action: notimp` - typ dotazu nie je implementovaný (iba A records)
+
+Pri spustení sa vypíše:
+- `dns filter started on port: X`
+- `resolver: X`
+
 ## Štatistiky
 
-Pri použití argumentu `--stats` program na konci behu vypíše nasledujúce štatistiky:
+Pri použití argumentu `--stats` program po stlačení Ctrl+C vypíše nasledujúce štatistiky:
 
-- **Celkový počet dotazov** - počet všetkých prijatých DNS dotazov
-- **Blokované dotazy** - počet dotazov, ktoré boli zablokované (REFUSED)
-- **Preposlané dotazy** - počet dotazov, ktoré boli preposlané resolveru
-- **Ostatné typy dotazov (NOTIMP)** - počet dotazov s nepodporovanými typmi (AAAA, MX, TXT, NS, CNAME, atď.)
-- **Presné zhody s blokovanými doménami** - počet presných zhôd s blokovanými doménami
-- **Zhody s poddomenami** - počet zhôd s poddomenami blokovaných domén
+- **total queries** - celkový počet prijatých DNS dotazov
+- **blocked** - počet dotazov, ktoré boli zablokované (REFUSED)
+- **forwarded** - počet dotazov, ktoré boli preposlané resolveru
+- **notimp** - počet dotazov s nepodporovanými typmi (AAAA, MX, TXT, NS, CNAME, atď.)
+- **blocked - exact matches** - počet presných zhôd s blokovanými doménami (napr. `example.com` == `example.com`)
+- **blocked - subdomain matches** - počet zhôd s poddomenami blokovaných domén (napr. `www.example.com` je poddomena `example.com`)
 
-Štatistiky sa vypíšu aj s percentami pre lepšie pochopenie distribúcie dotazov.
+**Poznámka:** `blocked - exact matches` + `blocked - subdomain matches` ≤ `blocked`, pretože niektoré blokované dotazy môžu byť klasifikované inak.
 
 ### Príklad výstupu štatistík:
 ```
-=== STATISTIKY ===
-Celkovy pocet dotazov: 19
-Blokovane dotazy: 6
-Preposlane dotazy: 3
-Ostatne typy dotazov (NOTIMP): 10
-Presne zhody s blokovanymi domenami: 3
-Zhody s poddomenami: 3
-
-Percenta:
-Blokovane: 31.6%
-Preposlane: 15.8%
-Ostatne typy (NOTIMP): 52.6%
-==================
+total queries: 14
+blocked: 6
+forwarded: 6
+notimp: 3
+blocked - exact matches: 3
+blocked - subdomain matches: 3
 ```
 
 ## Zoznam odovzdaných súborov

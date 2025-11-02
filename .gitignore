@@ -1,0 +1,21 @@
+# Compiled binaries
+dns
+*.o
+*.so
+*.a
+
+# Build directories
+obj/
+build/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+

@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
-#include <sstream>
 #include <vector>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -11,11 +10,9 @@
 #include <netinet/ip6.h>
 #include <netdb.h>
 #include <unistd.h>
-#include <iomanip>
 #include <signal.h>
 #include <csignal>
 
-// Konstanty
 #define DNS_PORT 53
 
 // Static member initialization
@@ -25,7 +22,7 @@ DNSResolver* DNSResolver::instance_ = nullptr;
 DNSResolver::DNSResolver(const std::string& resolver, int port, const std::string& filterFile, bool verbose, bool stats)
     : clientSocket4_(-1), clientSocket6_(-1), resolverSocket_(-1), resolverAddress_(resolver), port_(port), verbose_(verbose), statsEnabled_(stats) {
     
-    // Nastavenie singleton instance pre signal handling
+    // Nastavenie instancie pre signal handling
     instance_ = this;
     
     if (!loadFilterFile(filterFile)) {
@@ -33,7 +30,7 @@ DNSResolver::DNSResolver(const std::string& resolver, int port, const std::strin
     }
 }
 
-// Destruktor - zatvaraju sa sockety
+// Destruktor, zatvaraju sa sockety
 DNSResolver::~DNSResolver() {
     if (clientSocket4_ >= 0) {
         close(clientSocket4_);
@@ -106,7 +103,6 @@ bool DNSResolver::loadFilterFile(const std::string& filename) {
         }
     }
     
-    file.close();
     return true;
 }
 
@@ -127,7 +123,6 @@ int DNSResolver::createClientSocket(int port, int family) {
     }
     
     if (family == AF_INET6) {
-        // Nastavenie IPV6_V6ONLY na 1 pre čistý IPv6
         int v6only = 1;
         if (setsockopt(sockfd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only)) < 0) {
             close(sockfd);
@@ -169,6 +164,55 @@ int DNSResolver::createClientSocket(int port, int family) {
 
 // Vytvorenie resolver socketu - pripojenie k DNS serveru prebrane z: https://man7.org/linux/man-pages/man2/socket.2.html
 int DNSResolver::createResolverSocket(const std::string& resolver, int port) {
+    // Skusenie IPv6 adresy
+    struct in6_addr addr6;
+    if (inet_pton(AF_INET6, resolver.c_str(), &addr6) == 1) {
+        int sockfd = socket(AF_INET6, SOCK_DGRAM, 0);
+        if (sockfd < 0) {
+            std::cerr << "Failed to create IPv6 socket for resolver: " << resolver << std::endl;
+            return -1;
+        }
+        
+        struct sockaddr_in6 serverAddr;
+        memset(&serverAddr, 0, sizeof(serverAddr));
+        serverAddr.sin6_family = AF_INET6;
+        serverAddr.sin6_addr = addr6;
+        serverAddr.sin6_port = htons(port);
+        
+        if (connect(sockfd, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == 0) {
+            return sockfd;
+        }
+        
+        close(sockfd);
+        std::cerr << "Failed to connect to IPv6 DNS resolver: " << resolver << std::endl;
+        return -1;
+    }
+    
+    // Skusenie IPv4 adresy
+    struct in_addr addr4;
+    if (inet_pton(AF_INET, resolver.c_str(), &addr4) == 1) {
+        int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+        if (sockfd < 0) {
+            std::cerr << "Failed to create IPv4 socket for resolver: " << resolver << std::endl;
+            return -1;
+        }
+        
+        struct sockaddr_in serverAddr;
+        memset(&serverAddr, 0, sizeof(serverAddr));
+        serverAddr.sin_family = AF_INET;
+        serverAddr.sin_addr = addr4;
+        serverAddr.sin_port = htons(port);
+        
+        if (connect(sockfd, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == 0) {
+            return sockfd;
+        }
+        
+        close(sockfd);
+        std::cerr << "Failed to connect to IPv4 DNS resolver: " << resolver << std::endl;
+        return -1;
+    }
+    
+    // Nie je to priama IP adresa, skusime DNS lookup
     struct addrinfo hints, *result;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
@@ -179,6 +223,7 @@ int DNSResolver::createResolverSocket(const std::string& resolver, int port) {
         return -1;
     }
     
+    // Skusi vsetky adresy v poradi, ako ich getaddrinfo vrati
     int sockfd = -1;
     for (struct addrinfo* rp = result; rp != nullptr; rp = rp->ai_next) {
         sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);

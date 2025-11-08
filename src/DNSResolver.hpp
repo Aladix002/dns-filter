@@ -11,8 +11,16 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <stdexcept>
+#include <map>
+#include <cstdint>
 #include "DNSProtocol.hpp"
 
+// Struktura pre ulozenie informacii o klientovi
+struct ClientInfo {
+    struct sockaddr_storage addr;
+    socklen_t addrLen;
+    int socket;
+};
 
 // Hlavna DNS Resolver trieda
 class DNSResolver {
@@ -20,12 +28,15 @@ private:
     std::vector<std::string> blockedDomains_;       
     int clientSocket4_;                             // IPv4 client socket
     int clientSocket6_;                             // IPv6 client socket
-    int resolverSocket_;                             
+    int resolverSocket_;                            
     std::string resolverAddress_;                   
     int port_;                                      
     bool verbose_;                                   
     bool statsEnabled_;                             // Ci su zapnute statistiky
     static DNSResolver* instance_;                  // Singleton instance pre signal handling
+    
+    // Mapovanie DNS ID -> klient (pre paralelne spracovanie)
+    std::map<uint16_t, ClientInfo> pendingQueries_;
     
     // Statistiky
     Statistics stats_;
@@ -35,6 +46,7 @@ private:
     int createClientSocket(int port, int family);
     int createResolverSocket(const std::string& resolver, int port);
     void handleQuery(const char* buffer, int len, const struct sockaddr_storage& clientAddr, int clientSocket);
+    void handleResolverResponse();
     static void signalHandler(int signal);
     
 public:

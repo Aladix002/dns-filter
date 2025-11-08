@@ -251,9 +251,29 @@ void DNSResolver::handleQuery(const char* buffer, int len, const struct sockaddr
         return;
     }
     
+    // Ziskanie DNS ID z hlavicky
+    dns_header* header = (dns_header*)buffer;
+    uint16_t dnsId = ntohs(header->id);
+    
+    // Ulozenie informacii o klientovi pre neskorsie odoslanie odpovede
+    ClientInfo clientInfo;
+    memcpy(&clientInfo.addr, &clientAddr, sizeof(clientAddr));
+    if (clientAddr.ss_family == AF_INET) {
+        clientInfo.addrLen = sizeof(struct sockaddr_in);
+    } else if (clientAddr.ss_family == AF_INET6) {
+        clientInfo.addrLen = sizeof(struct sockaddr_in6);
+    } else {
+        clientInfo.addrLen = sizeof(clientAddr);
+    }
+    clientInfo.socket = clientSocket;
+    
+    // Ulozenie do mapy (prepadne stare ak existuje)
+    pendingQueries_[dnsId] = clientInfo;
+    
     // Presmerovava dotaz na resolver
     if (send(resolverSocket_, buffer, len, 0) < 0) {
         std::cerr << "Chyba pri odosielani dotazu na resolver" << std::endl;
+        pendingQueries_.erase(dnsId);
         return;
     }
     
@@ -262,29 +282,44 @@ void DNSResolver::handleQuery(const char* buffer, int len, const struct sockaddr
         stats_.forwardedQueries++;
     }
     
-    // Prijatie odpovede od resolvera
+    // Odpoved prichadza asynchronne cez handleResolverResponse()
+}
+
+// Spracovanie odpovede od resolvera
+void DNSResolver::handleResolverResponse() {
     char responseBuffer[MAX_DNS_SIZE];
     int received = recv(resolverSocket_, responseBuffer, MAX_DNS_SIZE, 0);
+    
     if (received < 0) {
         std::cerr << "Chyba pri prijimani odpovede od resolvera" << std::endl;
         return;
     }
     
+    if (received < (int)sizeof(dns_header)) {
+        return; // Prilis kratka odpoved
+    }
+    
+    // Ziskanie DNS ID z odpovede
+    dns_header* header = (dns_header*)responseBuffer;
+    uint16_t dnsId = ntohs(header->id);
+    
+    // Najdenie klienta podla DNS ID
+    auto it = pendingQueries_.find(dnsId);
+    if (it == pendingQueries_.end()) {
+        // Nenasiel sa klient pre tento DNS ID (moze byt stara odpoved)
+        return;
+    }
+    
+    ClientInfo& clientInfo = it->second;
     
     // Odoslanie odpovede klientovi
-    socklen_t addrLen;
-    if (clientAddr.ss_family == AF_INET) {
-        addrLen = sizeof(struct sockaddr_in);
-    } else if (clientAddr.ss_family == AF_INET6) {
-        addrLen = sizeof(struct sockaddr_in6);
-    } else {
-        addrLen = sizeof(clientAddr);
-    }
-    
-    if (sendto(clientSocket, responseBuffer, received, 0,
-               (const struct sockaddr*)&clientAddr, addrLen) < 0) {
+    if (sendto(clientInfo.socket, responseBuffer, received, 0,
+               (const struct sockaddr*)&clientInfo.addr, clientInfo.addrLen) < 0) {
         std::cerr << "Chyba pri odosielani odpovede klientovi" << std::endl;
     }
+    
+    // Odstranenie z mapy
+    pendingQueries_.erase(it);
 }
 
 // Vypisuje statistiky
@@ -331,7 +366,7 @@ void DNSResolver::run() {
     struct sockaddr_storage clientAddr;
     socklen_t addrLen = sizeof(clientAddr);
     
-    // Hlavny cyklus - cakanie na dotazy pomocou select
+    // Hlavny cyklus - cakanie na dotazy a odpovede pomocou select
     while (true) {
         fd_set readfds;
         FD_ZERO(&readfds);
@@ -344,6 +379,10 @@ void DNSResolver::run() {
         if (clientSocket6_ >= 0) {
             FD_SET(clientSocket6_, &readfds);
             maxfd = std::max(maxfd, clientSocket6_);
+        }
+        if (resolverSocket_ >= 0) {
+            FD_SET(resolverSocket_, &readfds);
+            maxfd = std::max(maxfd, resolverSocket_);
         }
         
         if (maxfd < 0) {
@@ -377,6 +416,11 @@ void DNSResolver::run() {
             if (n > 0) {
                 handleQuery(buffer, n, clientAddr, clientSocket6_);
             }
+        }
+        
+        // Spracovanie odpovede od resolvera
+        if (resolverSocket_ >= 0 && FD_ISSET(resolverSocket_, &readfds)) {
+            handleResolverResponse();
         }
     }
 }

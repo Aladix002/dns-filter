@@ -28,7 +28,8 @@ private:
     std::vector<std::string> blockedDomains_;       
     int clientSocket4_;                             // IPv4 client socket
     int clientSocket6_;                             // IPv6 client socket
-    int resolverSocket_;                            
+    int resolverSocket4_;                           // IPv4 resolver socket
+    int resolverSocket6_;                           // IPv6 resolver socket
     std::string resolverAddress_;                   
     int port_;                                      
     bool verbose_;                                   
@@ -44,9 +45,9 @@ private:
     // Privatne pomocne metody
     bool loadFilterFile(const std::string& filename);
     int createClientSocket(int port, int family);
-    int createResolverSocket(const std::string& resolver, int port);
+    int createResolverSocket(const std::string& resolver, int port, int family);
     void handleQuery(const char* buffer, int len, const struct sockaddr_storage& clientAddr, int clientSocket);
-    void handleResolverResponse();
+    void handleResolverResponse(int resolverSocket);
     static void signalHandler(int signal);
     
 public:

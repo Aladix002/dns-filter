@@ -20,7 +20,7 @@ DNSResolver* DNSResolver::instance_ = nullptr;
 
 // Konstruktor - nacitanie filtra a inicializacia
 DNSResolver::DNSResolver(const std::string& resolver, int port, const std::string& filterFile, bool verbose, bool stats)
-    : clientSocket4_(-1), clientSocket6_(-1), resolverSocket_(-1), resolverAddress_(resolver), port_(port), verbose_(verbose), statsEnabled_(stats) {
+    : clientSocket4_(-1), clientSocket6_(-1), resolverSocket4_(-1), resolverSocket6_(-1), resolverAddress_(resolver), port_(port), verbose_(verbose), statsEnabled_(stats) {
     
     // Nastavenie instancie pre signal handling
     instance_ = this;
@@ -38,8 +38,11 @@ DNSResolver::~DNSResolver() {
     if (clientSocket6_ >= 0) {
         close(clientSocket6_);
     }
-    if (resolverSocket_ >= 0) {
-        close(resolverSocket_);
+    if (resolverSocket4_ >= 0) {
+        close(resolverSocket4_);
+    }
+    if (resolverSocket6_ >= 0) {
+        close(resolverSocket6_);
     }
     
     // Vypisuje statistiky na konci
@@ -163,10 +166,13 @@ int DNSResolver::createClientSocket(int port, int family) {
 }
 
 // Vytvorenie resolver socketu - pripojenie k DNS serveru prebrane z: https://man7.org/linux/man-pages/man2/socket.2.html
-int DNSResolver::createResolverSocket(const std::string& resolver, int port) {
+int DNSResolver::createResolverSocket(const std::string& resolver, int port, int family) {
     // Skusenie IPv6 adresy
     struct in6_addr addr6;
     if (inet_pton(AF_INET6, resolver.c_str(), &addr6) == 1) {
+        if (family != AF_INET6) {
+            return -1; // Nie je IPv6 adresa
+        }
         int sockfd = socket(AF_INET6, SOCK_DGRAM, 0);
         if (sockfd < 0) {
             std::cerr << "Failed to create IPv6 socket for resolver: " << resolver << std::endl;
@@ -191,6 +197,9 @@ int DNSResolver::createResolverSocket(const std::string& resolver, int port) {
     // Skusenie IPv4 adresy
     struct in_addr addr4;
     if (inet_pton(AF_INET, resolver.c_str(), &addr4) == 1) {
+        if (family != AF_INET) {
+            return -1; // Nie je IPv4 adresa
+        }
         int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
         if (sockfd < 0) {
             std::cerr << "Failed to create IPv4 socket for resolver: " << resolver << std::endl;
@@ -212,20 +221,21 @@ int DNSResolver::createResolverSocket(const std::string& resolver, int port) {
         return -1;
     }
     
-    // Nie je to priama IP adresa, skusime DNS lookup
+    // Nie je to priama IP adresa, skusime DNS lookup pre konkretnu IP verziu
     struct addrinfo hints, *result;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
+    hints.ai_family = family;
     hints.ai_socktype = SOCK_DGRAM;
     
     if (getaddrinfo(resolver.c_str(), std::to_string(port).c_str(), &hints, &result) != 0) {
-        std::cerr << "Failed to resolve DNS server: " << resolver << std::endl;
-        return -1;
+        return -1; // Zlyhanie je OK, mozno nema tuto IP verziu
     }
     
-    // Skusi vsetky adresy v poradi, ako ich getaddrinfo vrati
+    // Skusi vsetky adresy danej IP verzie
     int sockfd = -1;
     for (struct addrinfo* rp = result; rp != nullptr; rp = rp->ai_next) {
+        if (rp->ai_family != family) continue; // Len adresy danej IP verzie
+        
         sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
         if (sockfd < 0) continue;
         
@@ -238,10 +248,6 @@ int DNSResolver::createResolverSocket(const std::string& resolver, int port) {
     }
     
     freeaddrinfo(result);
-    
-    if (sockfd < 0) {
-        std::cerr << "Failed to connect to DNS resolver: " << resolver << std::endl;
-    }
     
     return sockfd;
 }
@@ -269,8 +275,21 @@ bool DNSResolver::initialize() {
         return false;
     }
     
-    resolverSocket_ = createResolverSocket(resolverAddress_, DNS_PORT);
-    if (resolverSocket_ < 0) {
+    // Vytvorenie IPv4 resolver socketu
+    resolverSocket4_ = createResolverSocket(resolverAddress_, DNS_PORT, AF_INET);
+    if (resolverSocket4_ < 0 && verbose_) {
+        std::cerr << "Varovanie: Nepodarilo sa vytvorit IPv4 resolver socket" << std::endl;
+    }
+    
+    // Vytvorenie IPv6 resolver socketu
+    resolverSocket6_ = createResolverSocket(resolverAddress_, DNS_PORT, AF_INET6);
+    if (resolverSocket6_ < 0 && verbose_) {
+        std::cerr << "Varovanie: Nepodarilo sa vytvorit IPv6 resolver socket" << std::endl;
+    }
+    
+    // Aspon jeden resolver socket musi fungovat
+    if (resolverSocket4_ < 0 && resolverSocket6_ < 0) {
+        std::cerr << "Chyba: Nepodarilo sa vytvorit ani IPv4 ani IPv6 resolver socket" << std::endl;
         if (clientSocket4_ >= 0) close(clientSocket4_);
         if (clientSocket6_ >= 0) close(clientSocket6_);
         return false;
@@ -290,8 +309,23 @@ void DNSResolver::handleQuery(const char* buffer, int len, const struct sockaddr
         return;
     }
     
+    // Vyberie vhodny resolver socket podla IP verzie klienta
+    int resolverSocket = -1;
+    if (clientAddr.ss_family == AF_INET6 && resolverSocket6_ >= 0) {
+        resolverSocket = resolverSocket6_;
+    } else if (clientAddr.ss_family == AF_INET && resolverSocket4_ >= 0) {
+        resolverSocket = resolverSocket4_;
+    } else {
+        // Fallback: pouzije prvy dostupny resolver socket
+        if (resolverSocket4_ >= 0) {
+            resolverSocket = resolverSocket4_;
+        } else if (resolverSocket6_ >= 0) {
+            resolverSocket = resolverSocket6_;
+        }
+    }
+    
     // Kontrola ci je resolver dostupny
-    if (resolverSocket_ < 0) {
+    if (resolverSocket < 0) {
         DNSProtocol::sendErrorResponse(clientSocket, buffer, len, clientAddr, DNSResponseCode::SERVFAIL);
         return;
     }
@@ -316,7 +350,7 @@ void DNSResolver::handleQuery(const char* buffer, int len, const struct sockaddr
     pendingQueries_[dnsId] = clientInfo;
     
     // Presmerovava dotaz na resolver
-    if (send(resolverSocket_, buffer, len, 0) < 0) {
+    if (send(resolverSocket, buffer, len, 0) < 0) {
         std::cerr << "Chyba pri odosielani dotazu na resolver" << std::endl;
         pendingQueries_.erase(dnsId);
         return;
@@ -331,9 +365,9 @@ void DNSResolver::handleQuery(const char* buffer, int len, const struct sockaddr
 }
 
 // Spracovanie odpovede od resolvera
-void DNSResolver::handleResolverResponse() {
+void DNSResolver::handleResolverResponse(int resolverSocket) {
     char responseBuffer[MAX_DNS_SIZE];
-    int received = recv(resolverSocket_, responseBuffer, MAX_DNS_SIZE, 0);
+    int received = recv(resolverSocket, responseBuffer, MAX_DNS_SIZE, 0);
     
     if (received < 0) {
         std::cerr << "Chyba pri prijimani odpovede od resolvera" << std::endl;
@@ -425,9 +459,13 @@ void DNSResolver::run() {
             FD_SET(clientSocket6_, &readfds);
             maxfd = std::max(maxfd, clientSocket6_);
         }
-        if (resolverSocket_ >= 0) {
-            FD_SET(resolverSocket_, &readfds);
-            maxfd = std::max(maxfd, resolverSocket_);
+        if (resolverSocket4_ >= 0) {
+            FD_SET(resolverSocket4_, &readfds);
+            maxfd = std::max(maxfd, resolverSocket4_);
+        }
+        if (resolverSocket6_ >= 0) {
+            FD_SET(resolverSocket6_, &readfds);
+            maxfd = std::max(maxfd, resolverSocket6_);
         }
         
         if (maxfd < 0) {
@@ -463,9 +501,14 @@ void DNSResolver::run() {
             }
         }
         
-        // Spracovanie odpovede od resolvera
-        if (resolverSocket_ >= 0 && FD_ISSET(resolverSocket_, &readfds)) {
-            handleResolverResponse();
+        // Spracovanie odpovede od resolvera (IPv4)
+        if (resolverSocket4_ >= 0 && FD_ISSET(resolverSocket4_, &readfds)) {
+            handleResolverResponse(resolverSocket4_);
+        }
+        
+        // Spracovanie odpovede od resolvera (IPv6)
+        if (resolverSocket6_ >= 0 && FD_ISSET(resolverSocket6_, &readfds)) {
+            handleResolverResponse(resolverSocket6_);
         }
     }
 }

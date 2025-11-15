@@ -1,7 +1,7 @@
 # Filtrujúci DNS resolver
 
 **Autor:** Filip Botlo (xbotlo01)  
-**Dátum vytvorenia:** 2025
+**Dátum vytvorenia:** 15.11. 2025
 
 ## Popis programu
 

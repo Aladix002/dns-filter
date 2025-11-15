@@ -11,21 +11,20 @@
 
 // Odpoveda a hlavicka zo zdroja: https://tools.ietf.org/html/rfc1035
 
-// Definicia Statistics struktury
 struct Statistics {
-    uint64_t totalQueries = 0;                  // Celkovy pocet dotazov
-    uint64_t blockedQueries = 0;               // Pocet blokovanych dotazov
-    uint64_t forwardedQueries = 0;            // Pocet preposlanych dotazov
-    uint64_t otherTypeQueries = 0;              // Pocet inych typov dotazov (NOTIMP) - vratane AAAA
-    uint64_t exactMatches = 0;                 // Pocet presnych zhody s blokovanymi domenami
-    uint64_t subdomainMatches = 0;             // Pocet zhody s poddomenami
+    uint64_t totalQueries = 0;                  
+    uint64_t blockedQueries = 0;           
+    uint64_t forwardedQueries = 0;           
+    uint64_t otherTypeQueries = 0;             
+    uint64_t exactMatches = 0;                 
+    uint64_t subdomainMatches = 0;  
 };
 
 enum class DNSResponseCode : uint8_t {
-    NOERROR = 0,    // Bez chyby
-    SERVFAIL = 2,   // Chyba servera
-    NOTIMP = 4,     // Funkcia nie je implementovana
-    REFUSED = 5     // Odmietnute
+    NOERROR = 0,    
+    SERVFAIL = 2,   
+    NOTIMP = 4,     
+    REFUSED = 5  
 };
 
 
@@ -58,14 +57,13 @@ typedef struct dns_headers {
     unsigned arcount :16;      // Pocet additional records
 } dns_header;
 
-// DNS Question struktura
 typedef struct dns_questions {
-    int type :16;              // Typ zaznamu
-    int qclass :16;            // Trieda zaznamu 
+    int type :16;              
+    int qclass :16;  
 } dns_question;
 
 
-#define MAX_DNS_SIZE 1024      // Maximalna velkost DNS paketu
+#define MAX_DNS_SIZE 1024     
 
 // Trieda pre spracovanie DNS protokolu
 class DNSProtocol {

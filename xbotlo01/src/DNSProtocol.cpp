@@ -68,16 +68,13 @@ DNSResponseCode DNSProtocol::processQuery(const char* buffer, int /*len*/, const
                                          const std::vector<std::string>& blockedDomains, bool verbose, Statistics* stats) {
     dns_header* header = (dns_header*)buffer;
     
-    // Kontroluje ci je to dotaz
     if (!isQuery(header)) {
         return DNSResponseCode::NOERROR;
     }
     
-    // Parsuje otazky
     char* question = (char*)header + sizeof(dns_header);
     uint16_t qdcount = ntohs(header->qdcount);
     
-    // Aktualizuje statistiky - celkovy pocet dotazov
     if (stats) {
         stats->totalQueries++;
     }
@@ -97,16 +94,15 @@ DNSResponseCode DNSProtocol::processQuery(const char* buffer, int /*len*/, const
             normalized.pop_back();
         }
         
-        // Kontroluje typ dotazu - povolene len A zaznamy
-        if (qtype_val != 1) {  // A record type = 1
+        // Kontroluje typ dotazu
+        if (qtype_val != 1) { 
             if (verbose) {
                 std::cout << "query: " << domain << ", action: notimp" << std::endl;
             }
-            // Aktualizuje statistiky pre nepodporovane typy
             if (stats) {
-                stats->otherTypeQueries++;  // Vsetky typy okrem A (vratane AAAA)
+                stats->otherTypeQueries++; 
             }
-            return DNSResponseCode::NOTIMP; // Vsetko okrem A je NOTIMP
+            return DNSResponseCode::NOTIMP;
         }
         
         // Kontroluje presnu zhodu
@@ -115,7 +111,6 @@ DNSResponseCode DNSProtocol::processQuery(const char* buffer, int /*len*/, const
                 if (verbose) {
                     std::cout << "query: " << domain << ", action: blocked" << std::endl;
                 }
-                // Aktualizuje statistiky pre blokovane dotazy
                 if (stats) {
                     stats->blockedQueries++;
                     stats->exactMatches++;
@@ -131,7 +126,6 @@ DNSResponseCode DNSProtocol::processQuery(const char* buffer, int /*len*/, const
                 if (verbose) {
                     std::cout << "query: " << domain << ", action: blocked" << std::endl;
                 }
-                // Aktualizacia statistik pre blokovane poddomeny
                 if (stats) {
                     stats->blockedQueries++;
                     stats->subdomainMatches++;
@@ -144,9 +138,8 @@ DNSResponseCode DNSProtocol::processQuery(const char* buffer, int /*len*/, const
             std::cout << "query: " << domain << ", action: forwarded" << std::endl;
         }
         
-        // Presun na dalsiu otazku
         question = (char*)qtype + sizeof(dns_question);
     }
     
-    return DNSResponseCode::NOERROR; // Nie je treba blokovat
+    return DNSResponseCode::NOERROR;
 }

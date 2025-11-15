@@ -5,7 +5,7 @@
 
 ## Popis programu
 
-Program implementuje filtrujúci DNS resolver v C++17, ktorý blokuje dotazy typu A na domény zo zadaného zoznamu a ich poddomény. Ostatné dotazy prepúšťa v nezmenenej podobe špecifikovanému resolveru. Odpovede na dotazy predáva pôvodnému tazateľovi.
+Program implementuje filtrujúci DNS resolver, ktorý blokuje dotazy typu A na domény zo zadaného zoznamu a ich poddomény. Ostatné dotazy prepúšťa v nezmenenej podobe špecifikovanému resolveru.
 
 **Rozšírenie:**
 - Verbose mód pre ladenie

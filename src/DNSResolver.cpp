@@ -182,7 +182,6 @@ int DNSResolver::createResolverSocket(const std::string& resolver, int port, int
         }
         int sockfd = socket(AF_INET6, SOCK_DGRAM, 0);
         if (sockfd < 0) {
-            std::cerr << "Failed to create IPv6 socket for resolver: " << resolver << std::endl;
             return -1;
         }
         
@@ -197,7 +196,6 @@ int DNSResolver::createResolverSocket(const std::string& resolver, int port, int
         }
         
         close(sockfd);
-        std::cerr << "Failed to connect to IPv6 DNS resolver: " << resolver << std::endl;
         return -1;
     }
     
@@ -209,7 +207,6 @@ int DNSResolver::createResolverSocket(const std::string& resolver, int port, int
         }
         int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
         if (sockfd < 0) {
-            std::cerr << "Failed to create IPv4 socket for resolver: " << resolver << std::endl;
             return -1;
         }
         
@@ -224,7 +221,6 @@ int DNSResolver::createResolverSocket(const std::string& resolver, int port, int
         }
         
         close(sockfd);
-        std::cerr << "Failed to connect to IPv4 DNS resolver: " << resolver << std::endl;
         return -1;
     }
     
@@ -284,15 +280,9 @@ bool DNSResolver::initialize() {
     
     // Vytvorenie IPv4 resolver socketu
     resolverSocket4_ = createResolverSocket(resolverAddress_, DNS_PORT, AF_INET);
-    if (resolverSocket4_ < 0 && verbose_) {
-        std::cerr << "Varovanie: Nepodarilo sa vytvorit IPv4 resolver socket" << std::endl;
-    }
     
     // Vytvorenie IPv6 resolver socketu
     resolverSocket6_ = createResolverSocket(resolverAddress_, DNS_PORT, AF_INET6);
-    if (resolverSocket6_ < 0 && verbose_) {
-        std::cerr << "Varovanie: Nepodarilo sa vytvorit IPv6 resolver socket" << std::endl;
-    }
     
     if (resolverSocket4_ < 0 && resolverSocket6_ < 0) {
         std::cerr << "Chyba: Nepodarilo sa vytvorit ani IPv4 ani IPv6 resolver socket" << std::endl;
